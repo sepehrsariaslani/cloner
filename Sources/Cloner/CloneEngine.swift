@@ -15,6 +15,21 @@ enum CloneEngine {
             .appendingPathComponent("Cloner", isDirectory: true)
     }
 
+    static var candidateHomeDirectories: [URL] {
+        var candidates = [
+            FileManager.default.homeDirectoryForCurrentUser,
+            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        ]
+        if let environmentHome = ProcessInfo.processInfo.environment["HOME"], !environmentHome.isEmpty {
+            candidates.append(URL(fileURLWithPath: environmentHome, isDirectory: true))
+        }
+        if let account = getpwuid(getuid()), let accountHome = account.pointee.pw_dir {
+            candidates.append(URL(fileURLWithPath: String(cString: accountHome), isDirectory: true))
+        }
+        var seen = Set<String>()
+        return candidates.filter { seen.insert($0.standardizedFileURL.path).inserted }
+    }
+
     static func createClone(sourceURL: URL, displayName: String, in rootURL: URL = clonesDirectory) throws -> CloneRecord {
         let fileManager = FileManager.default
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,9 +121,17 @@ enum CloneEngine {
     static func launchArguments(for record: CloneRecord) throws -> [String] {
         guard usesChromiumUserDataDirectory(record.cloneURL) else { return [] }
 
-        let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cloner", isDirectory: true)
-            .appendingPathComponent("Profiles", isDirectory: true)
+        let cloneHome = record.cloneURL.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let existingProfile = ([cloneHome] + candidateHomeDirectories)
+            .map {
+                $0.appendingPathComponent("Library/Application Support/Cloner/Profiles", isDirectory: true)
+                    .appendingPathComponent(record.bundleIdentifier, isDirectory: true)
+            }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+        let supportDirectory = existingProfile ?? homeDirectory
+            .appendingPathComponent("Library/Application Support/Cloner/Profiles", isDirectory: true)
             .appendingPathComponent(record.bundleIdentifier, isDirectory: true)
         try FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
         return ["--user-data-dir=\(supportDirectory.path)"]

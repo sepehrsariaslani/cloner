@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Foundation
 import SwiftUI
 
@@ -15,7 +14,7 @@ final class CloneStore: ObservableObject {
 
     init() {
         let fileManager = FileManager.default
-        let homes = Self.candidateHomeDirectories()
+        let homes = CloneEngine.candidateHomeDirectories
         let roots = homes.map {
             $0.appendingPathComponent("Applications", isDirectory: true)
                 .appendingPathComponent("Cloner", isDirectory: true)
@@ -167,20 +166,6 @@ final class CloneStore: ObservableObject {
         } catch {
             alertMessage = "ذخیرهٔ فهرست cloneها ناموفق بود: \(error.localizedDescription)"
         }
-    }
-
-    private static func candidateHomeDirectories() -> [URL] {
-        var candidates = [
-            FileManager.default.homeDirectoryForCurrentUser,
-            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        ]
-        if let environmentHome = ProcessInfo.processInfo.environment["HOME"], !environmentHome.isEmpty {
-            candidates.append(URL(fileURLWithPath: environmentHome, isDirectory: true))
-        }
-        if let account = getpwuid(getuid()), let accountHome = account.pointee.pw_dir {
-            candidates.append(URL(fileURLWithPath: String(cString: accountHome), isDirectory: true))
-        }
-        return uniqueURLs(candidates)
     }
 
     private static func uniqueURLs(_ urls: [URL]) -> [URL] {
