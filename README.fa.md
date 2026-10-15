@@ -11,6 +11,7 @@ swift build --package-path . --configuration release
 ```
 
 فایل اجرایی در `.build/release/Cloner` ساخته می‌شود. برای قرار دادن آن در یک app bundle، اسکریپت `scripts/build-app.sh` را اجرا کن.
+تصویر آیکون در `Resources/AppIcon.png` (یا `.jpg`) است و اسکریپت ساخت، فایل `.icns` لازم را داخل app bundle تولید می‌کند.
 
 ## استفاده
 

@@ -8,6 +8,7 @@ A small native macOS app for creating and managing renamed copies of `.app` bund
 - Re-sign the copy ad hoc while removing Team ID, App ID, Keychain group, and App Group entitlements that macOS cannot honor on an ad hoc signature.
 - Give Electron and Chromium based apps a separate `--user-data-dir` profile so they can start beside the original instance.
 - Open, reveal, and move managed copies to Trash.
+- Use the custom Cloner app icon from `Resources/AppIcon.png` (or `.jpg`); the build script converts it to the `.icns` file in the app bundle.
 
 The interface and Persian usage guide are in [README.fa.md](README.fa.md).
 
