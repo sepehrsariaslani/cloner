@@ -1,8 +1,16 @@
+import Darwin
 import Foundation
 
 enum CloneEngine {
+    static var homeDirectory: URL {
+        if let account = getpwuid(getuid()), let accountHome = account.pointee.pw_dir {
+            return URL(fileURLWithPath: String(cString: accountHome), isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
     static var clonesDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        homeDirectory
             .appendingPathComponent("Applications", isDirectory: true)
             .appendingPathComponent("Cloner", isDirectory: true)
     }

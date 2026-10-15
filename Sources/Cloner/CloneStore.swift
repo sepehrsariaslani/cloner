@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import SwiftUI
 
@@ -9,12 +10,30 @@ final class CloneStore: ObservableObject {
     @Published var alertMessage: String?
     @Published var lastCreatedID: UUID?
 
-    private let metadataURL: URL
+    private let metadataURLs: [URL]
+    private let cloneRoots: [URL]
 
     init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = support.appendingPathComponent("Cloner", isDirectory: true)
-        metadataURL = directory.appendingPathComponent("clones.json")
+        let fileManager = FileManager.default
+        let homes = Self.candidateHomeDirectories()
+        let roots = homes.map {
+            $0.appendingPathComponent("Applications", isDirectory: true)
+                .appendingPathComponent("Cloner", isDirectory: true)
+        }
+        cloneRoots = Self.uniqueURLs(roots)
+
+        var supportDirectories = [
+            CloneEngine.homeDirectory.appendingPathComponent("Library/Application Support", isDirectory: true)
+        ]
+        supportDirectories.append(contentsOf: fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask))
+        supportDirectories.append(contentsOf: homes.map {
+            $0.appendingPathComponent("Library/Application Support", isDirectory: true)
+        })
+        let metadataCandidates = Self.uniqueURLs(supportDirectories.map {
+            $0.appendingPathComponent("Cloner", isDirectory: true)
+                .appendingPathComponent("clones.json")
+        })
+        metadataURLs = metadataCandidates
         loadRecords()
     }
 
@@ -82,17 +101,63 @@ final class CloneStore: ObservableObject {
     }
 
     private func loadRecords() {
-        guard let data = try? Data(contentsOf: metadataURL),
-              let decoded = try? JSONDecoder().decode([CloneRecord].self, from: data) else {
-            records = []
-            return
+        let fileManager = FileManager.default
+        var recordsByPath: [String: CloneRecord] = [:]
+
+        for url in metadataURLs {
+            guard let data = try? Data(contentsOf: url),
+                  let decoded = try? JSONDecoder().decode([CloneRecord].self, from: data) else {
+                continue
+            }
+            for record in decoded where fileManager.fileExists(atPath: record.clonePath) {
+                let path = URL(fileURLWithPath: record.clonePath).standardizedFileURL.path
+                if recordsByPath[path].map({ $0.createdAt < record.createdAt }) ?? true {
+                    recordsByPath[path] = record
+                }
+            }
         }
-        records = decoded.filter { FileManager.default.fileExists(atPath: $0.clonePath) }
-            .sorted { $0.createdAt > $1.createdAt }
+
+        for root in cloneRoots {
+            let apps = (try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey, .creationDateKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            for appURL in apps where appURL.pathExtension.lowercased() == "app" {
+                let path = appURL.standardizedFileURL.path
+                guard recordsByPath[path] == nil,
+                      let data = try? Data(contentsOf: appURL.appendingPathComponent("Contents/Info.plist")),
+                      let info = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                      let bundleIdentifier = info["CFBundleIdentifier"] as? String,
+                      bundleIdentifier.hasPrefix("com.cloner.clone.") else {
+                    continue
+                }
+
+                let values = try? appURL.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+                let createdAt = values?.creationDate ?? values?.contentModificationDate ?? Date()
+                recordsByPath[path] = CloneRecord(
+                    id: UUID(),
+                    name: (info["CFBundleDisplayName"] as? String)
+                        ?? (info["CFBundleName"] as? String)
+                        ?? appURL.deletingPathExtension().lastPathComponent,
+                    sourcePath: "",
+                    clonePath: path,
+                    sourceBundleIdentifier: nil,
+                    bundleIdentifier: bundleIdentifier,
+                    createdAt: createdAt
+                )
+            }
+        }
+
+        records = recordsByPath.values.sorted { $0.createdAt > $1.createdAt }
+        if !records.isEmpty {
+            saveRecords()
+        }
     }
 
     private func saveRecords() {
         do {
+            guard let metadataURL = metadataURLs.first else { return }
             try FileManager.default.createDirectory(
                 at: metadataURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -102,5 +167,24 @@ final class CloneStore: ObservableObject {
         } catch {
             alertMessage = "ذخیرهٔ فهرست cloneها ناموفق بود: \(error.localizedDescription)"
         }
+    }
+
+    private static func candidateHomeDirectories() -> [URL] {
+        var candidates = [
+            FileManager.default.homeDirectoryForCurrentUser,
+            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        ]
+        if let environmentHome = ProcessInfo.processInfo.environment["HOME"], !environmentHome.isEmpty {
+            candidates.append(URL(fileURLWithPath: environmentHome, isDirectory: true))
+        }
+        if let account = getpwuid(getuid()), let accountHome = account.pointee.pw_dir {
+            candidates.append(URL(fileURLWithPath: String(cString: accountHome), isDirectory: true))
+        }
+        return uniqueURLs(candidates)
+    }
+
+    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return urls.filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 }

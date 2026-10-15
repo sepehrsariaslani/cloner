@@ -77,7 +77,7 @@ struct ClonerWindow: View {
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(record.name).font(.body.weight(.medium)).lineLimit(1)
-                            Text(record.sourceURL.deletingPathExtension().lastPathComponent)
+                            Text(record.sourcePath.isEmpty ? "منبع نامشخص" : record.sourceURL.deletingPathExtension().lastPathComponent)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -174,7 +174,7 @@ struct ClonerWindow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    detailRow("برنامهٔ اصلی", value: record.sourcePath)
+                    detailRow("برنامهٔ اصلی", value: record.sourcePath.isEmpty ? "نامشخص" : record.sourcePath)
                     Divider()
                     detailRow("مسیر clone", value: record.clonePath)
                     Divider()
